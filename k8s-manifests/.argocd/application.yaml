@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gitops-app
+  namespace: argocd
+spec:
+  project: default
+
+  # WHERE to get the desired state from (your GitHub repo)
+  source:
+    repoURL: https://github.com/ArashMHD91/gitops-argocd-eks.git
+    targetRevision: HEAD
+    path: k8s-manifests
+
+  # WHERE to deploy to (your EKS cluster)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+
+  # WHAT to do when repo changes
+  syncPolicy:
+    automated:
+      prune: true      # delete resources removed from repo
+      selfHeal: true   # fix manual changes made directly to cluster
+    syncOptions:
+      - CreateNamespace=true
