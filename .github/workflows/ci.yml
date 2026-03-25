@@ -1,7 +1,5 @@
 name: CI - Build and Push to ECR
 
-# Triggers: only run when code in app/ changes on main branch
-# Why? No point rebuilding the image if only terraform/ changed
 on:
   push:
     branches:
@@ -19,13 +17,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check out the code
-      # Why? The runner is a fresh VM — it has nothing, we need to pull our code first
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 2: Authenticate to AWS
-      # Why? ECR is private — we need AWS credentials to push images
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -33,16 +29,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Step 3: Login to ECR
-      # Why? Docker needs to authenticate to ECR separately before pushing
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Step 4: Build, tag and push
-      # Why commit SHA as tag? Every image gets a unique tag tied to the exact
-      # commit that produced it — makes rollbacks and debugging easy
-      # We keep "latest" too for convenience
       - name: Build, tag and push image to ECR
         env:
           IMAGE_TAG: ${{ github.sha }}
@@ -50,19 +40,19 @@ jobs:
           docker build -t $ECR_REPOSITORY_URL:$IMAGE_TAG -t $ECR_REPOSITORY_URL:latest ./app
           docker push $ECR_REPOSITORY_URL:$IMAGE_TAG
           docker push $ECR_REPOSITORY_URL:latest
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "Built and pushed image with tag: $IMAGE_TAG"
+          echo "Built and pushed: $ECR_REPOSITORY_URL:$IMAGE_TAG"
 
-      # Step 5: Update the Kubernetes manifest with the new image tag
-      # Why? This is the GitOps part — ArgoCD watches the k8s-manifests/ folder
-      # When we update the image tag here, ArgoCD sees the change and auto-deploys
       - name: Update Kubernetes manifest with new image tag
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          sed -i "s|image: .*gitops-app.*|image: $ECR_REPOSITORY_URL:$IMAGE_TAG|g" k8s-manifests/deployment.yaml
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add k8s-manifests/deployment.yaml
-          git diff --staged --quiet || git commit -m "ci: update image tag to $IMAGE_TAG"
-          git push
+          if [ -f k8s-manifests/deployment.yaml ]; then
+            sed -i "s|image: .*gitops-app.*|image: $ECR_REPOSITORY_URL:$IMAGE_TAG|g" k8s-manifests/deployment.yaml
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git add k8s-manifests/deployment.yaml
+            git diff --staged --quiet || git commit -m "ci: update image tag to $IMAGE_TAG"
+            git push
+          else
+            echo "deployment.yaml not found yet, skipping manifest update"
+          fi
