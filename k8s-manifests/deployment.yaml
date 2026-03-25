@@ -20,14 +20,12 @@ spec:
           image: 484908302618.dkr.ecr.eu-central-1.amazonaws.com/gitops-app:latest
           ports:
             - containerPort: 5000
-          # Liveness probe: if this fails, K8s restarts the pod
           livenessProbe:
             httpGet:
               path: /health
               port: 5000
             initialDelaySeconds: 10
             periodSeconds: 10
-          # Readiness probe: if this fails, K8s stops sending traffic to the pod
           readinessProbe:
             httpGet:
               path: /health
